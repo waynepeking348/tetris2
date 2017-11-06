@@ -189,6 +189,14 @@ void init()
  
 namespace Util
 {
+
+
+	// 检查形状是否存在一条合法的路径（可以在路径中旋转）到达目标位置
+	inline bool checkValidPath(int color, int blockType, int x, int y, int o)
+	{
+		// TODO
+		return false;
+	}
  
 	// 检查能否从场地顶端直接落到当前位置
 	inline bool checkDirectDropTo(int color, int blockType, int x, int y, int o)
@@ -355,8 +363,71 @@ namespace Util
 #endif
 	}
 }
- 
- 
+
+namespace Feature
+{
+	/**
+	 * 根据当前棋盘状态，提取各种特征指标，用于估值函数
+	 */
+
+	inline int getLandingHeight(int color)
+	{
+		return 0;
+	}
+
+	inline int getRowEliminated(int color)
+	{
+		return 0;
+	}
+
+	inline int getRowTransitions(int color)
+	{
+		return 0;
+	}
+
+	inline int getColTransitions(int color)
+	{
+		return 0;
+	}
+
+	inline int getHoleNumber(int color)
+	{
+		return 0;
+	}
+
+	inline int getWellSum(int color)
+	{
+		return 0;
+	}
+}
+
+namespace Pierre
+{
+	
+	/**
+	 * Pierre Dellacherie
+	 * 估值函数使用该算法中提到的多项指标以及权重
+	 */
+
+	double weights[6] = {
+		-4.500158825082766,
+		3.4181268101392694,
+		-3.2178882868487753,
+		-9.348695305445199,
+		-7.899265427351652,
+		-3.3855972247263626
+	};
+
+	inline double calcEval(double values[6])
+	{
+		double score = 0.0;
+		for (int feature = 0; feature < 6; ++feature)
+			score += values[feature] * weights[feature];
+		return score;
+	}
+}
+
+
 int main()
 {
 	// 加速输入

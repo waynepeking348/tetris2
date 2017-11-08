@@ -190,11 +190,10 @@ public:
 	inline void extractFeature(int* height) {
 		int i, x, y, tempX, tempY;
 
-		int tmpHeight[MAPWIDTH+1], tmpMaxHeight = maxHeight[color];
+		int tmpHeight[MAPWIDTH+1], tmpMaxHeight = 0;
 		int tmpGridInfo[MAPHEIGHT+2][MAPWIDTH+2];
-		memcpy(tmpHeight, height, sizeof height);
-		memcpy(tmpGridInfo, gridInfo[color], sizeof tmpGridInfo);
-
+		memcpy(tmpHeight, height, sizeof(int)*(MAPWIDTH+1));
+		memcpy(tmpGridInfo, gridInfo[color], sizeof(int)*(MAPWIDTH+2)*(MAPHEIGHT+2));
 
 		landingHeight = 0;
 		for (i = 0; i < 4; ++i) {
@@ -231,7 +230,7 @@ public:
 			} else {
 				if (tmpElimTotal) {
 					for (x = 1; x <= MAPWIDTH; ++x) {
-						tmpGridInfo[y-tmpElimTotal][x] = tmpGridInfo[y][x] == 0?0 : 1;
+						tmpGridInfo[y-tmpElimTotal][x] = tmpGridInfo[y][x];
 						tmpGridInfo[y][x] = 0;
 					}
 				}
@@ -246,7 +245,7 @@ public:
 		holes = 0;
 		for (x = 1; x <= MAPWIDTH; ++x) {
 			for (y = 1; y < tmpHeight[x]; ++y) {
-				if (tmpGridInfo[y][x] == 0 && tmpGridInfo[y+1][x] == 1) {
+				if (tmpGridInfo[y][x] == 0 && tmpGridInfo[y+1][x] > 0) {
 					holes++;
 				}
 			}
@@ -617,7 +616,7 @@ determined:
 
 	double maxScore = -1000000000.0d;
 	for (int x = 1; x <= MAPWIDTH; ++x) {
-		for (int y = 1; y < 3; ++y) {
+		for (int y = 1; y < 3 && y+height[x] <= MAPHEIGHT; ++y) {
 			for (int o = 0; o < 4; ++o) {
 				if (!block.set(x, height[x]+y, o).isValid()) continue;
 				if (!block.onGround()) continue;

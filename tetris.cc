@@ -10,6 +10,7 @@
  
 #include <iostream>
 #include <string>
+#include <string.h>
 #include <cmath>
 #include <algorithm>
 #include <cstdlib>
@@ -136,6 +137,17 @@ public:
 		return true;
 	}
  
+	// 将方块从当前放置位置移除
+	inline bool remove() {
+		int i, tempX, tempY;
+		for (i = 0; i < 4; ++i) {
+			tempX = blockX + shape[orientation][2*i];
+			tempY = blockY + shape[orientation][2*i+1];
+			gridInfo[color][tempY][tempX] = 0;
+		}
+		return true;
+	}
+
 	// 检查能否逆时针旋转自己到o
 	inline bool rotation(int o)
 	{
@@ -168,6 +180,96 @@ public:
 			fromO = (fromO + 1) % 4;
 		}
 		return true;
+	}
+
+	// Serveral metrics that value function may need.
+	int landingHeight;
+	int holes, erodedCells, cumulativeWells;
+	int rowTransitions, colTransitions;
+
+	inline void extractFeature(int* height) {
+		int i, x, y, tempX, tempY;
+
+		int tmpHeight[MAPWIDTH+1], tmpMaxHeight = maxHeight[color];
+		int tmpGridInfo[MAPHEIGHT+2][MAPWIDTH+2];
+		memcpy(tmpHeight, height, sizeof height);
+		memcpy(tmpGridInfo, gridInfo[color], sizeof tmpGridInfo);
+
+
+		landingHeight = 0;
+		for (i = 0; i < 4; ++i) {
+			tempX = blockX + shape[2*i];
+			tempY = blockY + shape[2*i+1];
+			landingHeight = max(landingHeight, height[tempX]);
+
+			tmpHeight[tempX] = max(tempY, tmpHeight[tempX]);
+			tmpMaxHeight = max(tmpMaxHeight, tmpHeight[tempX]);
+		}
+
+		// 模拟当前放置的形状是否需要消除某些行，同时更新消除之后的高度数据
+		// 还需要考虑的特征：消除多行的实际得分
+		// 消除过程中会计算的东西：
+		// 		1. 消除的行
+		// 		2. 最后一块对消除的贡献
+		
+		int tmpElimTotal = 0, cellElimInBlock = 0;
+		for (y = 1; y <= MAPHEIGHT; ++y) {
+			int fullFlag = 1, emptyFlag = 1, cellNumInBlock = 0;
+
+			for (x = 1; x <= MAPWIDTH; ++x) {
+				if (tmpGridInfo[y][x] == 0) fullFlag = 0;
+				else emptyFlag = 0;
+				if (tmpGridInfo[y][x] == 2) cellNumInBlock++;
+			}
+
+			if (fullFlag) {
+				tmpElimTotal++;
+				cellElimInBlock += cellNumInBlock;
+				for (x = 1; x <= MAPWIDTH; ++x) tmpGridInfo[y][x] = 0;
+			} else if (emptyFlag) {
+				break;
+			} else {
+				if (tmpElimTotal) {
+					for (x = 1; x <= MAPWIDTH; ++x) {
+						tmpGridInfo[y-tmpElimTotal][x] = tmpGridInfo[y][x] == 0?0 : 1;
+						tmpGridInfo[y][x] = 0;
+					}
+				}
+			}
+		}
+
+		tmpMaxHeight -= tmpElimTotal;
+		for (x = 1; x <= MAPWIDTH; ++x) tmpHeight[x] -= tmpElimTotal;
+
+
+
+
+		colTransitions = 0;
+		for (x = 1; x <= MAPWIDTH; ++x) {
+			if (tmpHeight[x] == 0) continue;
+
+			bool prevCell = true;
+			for (y = 1; y <= MAPHEIGHT; ++y) {
+				if (gridInfo[color][y][x] > 0) prevCell = true;
+				if (gridInfo[color][y][x] == 0 && prevCell) {
+					colTransitions += 2;
+					prevCell = false;
+				}
+			}
+		}
+		colTransitions -= MAPWIDTH;
+
+		rowTransitions = 0;
+		for (y = 1; y <= tmpMaxHeight; ++y) {
+			bool prevCell = true;
+			for (x = 1; x <= MAPWIDTH; ++x) {
+				if (gridInfo[color][y][x] > 0) prevCell = true;
+				if (gridInfo[color][y][x] == 0 && prevCell) {
+					rowTransitions += 2;
+					prevCell = false;
+				}
+			}
+		}
 	}
 };
  
@@ -364,45 +466,8 @@ namespace Util
 	}
 }
 
-namespace Feature
-{
-	/**
-	 * 根据当前棋盘状态，提取各种特征指标，用于估值函数
-	 */
 
-	inline int getLandingHeight(int color)
-	{
-		return 0;
-	}
-
-	inline int getRowEliminated(int color)
-	{
-		return 0;
-	}
-
-	inline int getRowTransitions(int color)
-	{
-		return 0;
-	}
-
-	inline int getColTransitions(int color)
-	{
-		return 0;
-	}
-
-	inline int getHoleNumber(int color)
-	{
-		return 0;
-	}
-
-	inline int getWellSum(int color)
-	{
-		return 0;
-	}
-}
-
-namespace Pierre
-{
+namespace Pierre {
 	
 	/**
 	 * Pierre Dellacherie
@@ -418,8 +483,7 @@ namespace Pierre
 		-3.3855972247263626
 	};
 
-	inline double calcEval(double values[6])
-	{
+	inline double calcEval(double values[6]) {
 		double score = 0.0;
 		for (int feature = 0; feature < 6; ++feature)
 			score += values[feature] * weights[feature];
@@ -514,11 +578,59 @@ int main()
 					goto determined;
 				}
 			}
+	
+	//////////////////////////////////////////////////////////
+	// Find the desired position to place current block
+	// 首要目的：活得越久越好
+	// 次要目的：得分越多越好
+	//////////////////////////////////////////////////////////
+	int height[MAPWIDTH+1];
+	for (int x = 1; x <= MAPWIDTH; ++x) {
+		height[x] = 0;
+		for (int y = MAPHEIGHT; y > 0; --y) {
+			if (gridInfo[currBotColor][y][x] > 0) {
+				height[x] = y;
+				break;
+			}
+		}
+	}
+
+	double maxScore = -1e9;
+	for (int x = 1; x <= MAPWIDTH; ++x) {
+		for (int y = 1; y < 3; ++y) {
+			for (int o = 0; o < 4; ++o) {
+				if (!block.set(x, height[x]+y, o).isValid()) continue;
+				if (!block.onGround()) continue;
+				if (!Util::checkDirectDropTo(currBotColor, block.blockType, x, height[x]+y, o)) continue;
+
+				// 存在一条从顶部到当前位置的路径，且通过最初的方向，在路径中途旋转之后可以到达当前位置当前方向
+
+				block.place();
+				block.extractFeature(height);
+
+				double values[6] = {
+					block.landingHeight,
+					block.erodedCells,
+					block.rowTransitions,
+					block.colTransitions,
+					block.holes,
+					block.cumulativeWells
+				};
+				double value = Pierre::calcEval(values);
+				if (value > maxScore) {
+					maxScore = value;
+					finalX = x; finalY = height[x]+y; finalO = o;
+				}
+				
+				block.remove();
+			}
+		}
+	}
  
 determined:
 	// 再看看给对方什么好
  
-	int maxCount = 0, minCount = 99;
+	int maxCount = 0, minCount = 9999999;
 	for (int i = 0; i < 7; i++)
 	{
 		if (typeCountForColor[enemyColor][i] > maxCount)

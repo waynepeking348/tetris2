@@ -240,9 +240,28 @@ public:
 
 		tmpMaxHeight -= tmpElimTotal;
 		for (x = 1; x <= MAPWIDTH; ++x) tmpHeight[x] -= tmpElimTotal;
+		erodedCells = tmpElimTotal * cellElimInBlock;
 
 
+		holes = 0;
+		for (x = 1; x <= MAPWIDTH; ++x) {
+			for (y = 1; y < tmpHeight[x]; ++y) {
+				if (tmpGridInfo[y][x] == 0 && tmpGridInfo[y+1][x] == 1) {
+					holes++;
+				}
+			}
+		}
 
+		cumulativeWells = 0;
+		for (x = 1; x <= MAPWIDTH; ++x) {
+			if (x > 1 && tmpHeight[x-1] <= tmpHeight[x]) continue;
+			if (x < MAPWIDTH && tmpHeight[x+1] <= tmpHeight[x]) continue;
+
+			int depth = 20;
+			if (x > 1) depth = min(depth, tmpHeight[x-1] - tmpHeight[x]);
+			if (x < MAPWIDTH) depth = min(depth, tmpHeight[x+1] - tmpHeight[x]);
+			cumulativeWells += depth * (depth+1) / 2;
+		}
 
 		colTransitions = 0;
 		for (x = 1; x <= MAPWIDTH; ++x) {

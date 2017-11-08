@@ -198,8 +198,8 @@ public:
 
 		landingHeight = 0;
 		for (i = 0; i < 4; ++i) {
-			tempX = blockX + shape[2*i];
-			tempY = blockY + shape[2*i+1];
+			tempX = blockX + shape[orientation][2*i];
+			tempY = blockY + shape[orientation][2*i+1];
 			landingHeight = max(landingHeight, height[tempX]);
 
 			tmpHeight[tempX] = max(tempY, tmpHeight[tempX]);
@@ -597,6 +597,7 @@ int main()
 					goto determined;
 				}
 			}
+determined:
 	
 	//////////////////////////////////////////////////////////
 	// Find the desired position to place current block
@@ -614,7 +615,7 @@ int main()
 		}
 	}
 
-	double maxScore = -1e9;
+	double maxScore = -1000000000.0d;
 	for (int x = 1; x <= MAPWIDTH; ++x) {
 		for (int y = 1; y < 3; ++y) {
 			for (int o = 0; o < 4; ++o) {
@@ -628,12 +629,12 @@ int main()
 				block.extractFeature(height);
 
 				double values[6] = {
-					block.landingHeight,
-					block.erodedCells,
-					block.rowTransitions,
-					block.colTransitions,
-					block.holes,
-					block.cumulativeWells
+					(double)block.landingHeight,
+					(double)block.erodedCells,
+					(double)block.rowTransitions,
+					(double)block.colTransitions,
+					(double)block.holes,
+					(double)block.cumulativeWells
 				};
 				double value = Pierre::calcEval(values);
 				if (value > maxScore) {
@@ -645,8 +646,8 @@ int main()
 			}
 		}
 	}
+
  
-determined:
 	// 再看看给对方什么好
  
 	int maxCount = 0, minCount = 9999999;

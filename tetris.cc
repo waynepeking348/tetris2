@@ -183,27 +183,35 @@ public:
 	}
 
 	// Serveral metrics that value function may need.
-	int landingHeight;
-	int holes, erodedCells, cumulativeWells;
+	double landingHeight;
+	int holes, rowsEliminated, erodedCells, cumulativeWells, wellSum;
 	int rowTransitions, colTransitions;
 
-	inline void extractFeature(int* height) {
+	inline void extractFeature(int newGrid[MAPHEIGHT+2][MAPWIDTH+2], int prevElimRows) {
 		int i, x, y, tempX, tempY;
 
 		int tmpHeight[MAPWIDTH+1], tmpMaxHeight = 0;
+		for (int x = 1; x <= MAPWIDTH; ++x) {
+			tmpHeight[x] = 0;
+			for (int y = MAPHEIGHT; y > 0; --y) {
+				if (newGrid[y][x] > 0) {
+					tmpHeight[x] = y;
+					break;
+				}
+			}
+			tmpMaxHeight = max(tmpMaxHeight, tmpHeight[x]);
+		}
+		
 		int tmpGridInfo[MAPHEIGHT+2][MAPWIDTH+2];
-		memcpy(tmpHeight, height, sizeof(int)*(MAPWIDTH+1));
-		memcpy(tmpGridInfo, gridInfo[color], sizeof(int)*(MAPWIDTH+2)*(MAPHEIGHT+2));
+		memcpy(tmpGridInfo, newGrid, sizeof(int)*(MAPWIDTH+2)*(MAPHEIGHT+2));
 
 		landingHeight = 0;
 		for (i = 0; i < 4; ++i) {
 			tempX = blockX + shape[orientation][2*i];
 			tempY = blockY + shape[orientation][2*i+1];
-			landingHeight = max(landingHeight, height[tempX]);
-
-			tmpHeight[tempX] = max(tempY, tmpHeight[tempX]);
-			tmpMaxHeight = max(tmpMaxHeight, tmpHeight[tempX]);
+			landingHeight += tempY;
 		}
+		landingHeight /= 4.0;
 
 		// 模拟当前放置的形状是否需要消除某些行，同时更新消除之后的高度数据
 		// 还需要考虑的特征：消除多行的实际得分
@@ -240,6 +248,7 @@ public:
 		tmpMaxHeight -= tmpElimTotal;
 		for (x = 1; x <= MAPWIDTH; ++x) tmpHeight[x] -= tmpElimTotal;
 		erodedCells = tmpElimTotal * cellElimInBlock;
+		rowsEliminated = tmpElimTotal + prevElimRows;
 
 
 		holes = 0;
@@ -252,6 +261,7 @@ public:
 		}
 
 		cumulativeWells = 0;
+		wellSum = 0;
 		for (x = 1; x <= MAPWIDTH; ++x) {
 			if (x > 1 && tmpHeight[x-1] <= tmpHeight[x]) continue;
 			if (x < MAPWIDTH && tmpHeight[x+1] <= tmpHeight[x]) continue;
@@ -260,6 +270,7 @@ public:
 			if (x > 1) depth = min(depth, tmpHeight[x-1] - tmpHeight[x]);
 			if (x < MAPWIDTH) depth = min(depth, tmpHeight[x+1] - tmpHeight[x]);
 			cumulativeWells += depth * (depth+1) / 2;
+			wellSum += depth;
 		}
 
 		colTransitions = 0;
@@ -274,8 +285,8 @@ public:
 					prevCell = false;
 				}
 			}
+			colTransitions--;
 		}
-		colTransitions -= MAPWIDTH;
 
 		rowTransitions = 0;
 		for (y = 1; y <= tmpMaxHeight; ++y) {
@@ -603,45 +614,101 @@ determined:
 	// 首要目的：活得越久越好
 	// 次要目的：得分越多越好
 	//////////////////////////////////////////////////////////
-	int height[MAPWIDTH+1];
-	for (int x = 1; x <= MAPWIDTH; ++x) {
-		height[x] = 0;
-		for (int y = MAPHEIGHT; y > 0; --y) {
-			if (gridInfo[currBotColor][y][x] > 0) {
-				height[x] = y;
-				break;
-			}
-		}
-	}
 
-	double maxScore = -1000000000.0d;
+	double maxPoints = -1000000000.0d;
 	for (int x = 1; x <= MAPWIDTH; ++x) {
-		for (int y = 1; y < 3 && y+height[x] <= MAPHEIGHT; ++y) {
+		for (int y = 1; y <= MAPHEIGHT; ++y) {
 			for (int o = 0; o < 4; ++o) {
-				if (!block.set(x, height[x]+y, o).isValid()) continue;
+				if (!block.set(x, y, o).isValid()) continue;
 				if (!block.onGround()) continue;
-				if (!Util::checkDirectDropTo(currBotColor, block.blockType, x, height[x]+y, o)) continue;
+				if (!Util::checkDirectDropTo(currBotColor, block.blockType, x, y, o)) continue;
 
 				// 存在一条从顶部到当前位置的路径，且通过最初的方向，在路径中途旋转之后可以到达当前位置当前方向
 
 				block.place();
-				block.extractFeature(height);
 
-				double values[6] = {
-					(double)block.landingHeight,
-					(double)block.erodedCells,
-					(double)block.rowTransitions,
-					(double)block.colTransitions,
-					(double)block.holes,
-					(double)block.cumulativeWells
-				};
-				double value = Pierre::calcEval(values);
-				if (value > maxScore) {
-					maxScore = value;
-					finalX = x; finalY = height[x]+y; finalO = o;
+				int tmpGridInfo[MAPHEIGHT+2][MAPWIDTH+2];
+				memcpy(tmpGridInfo, gridInfo[currBotColor], sizeof(int)*(MAPHEIGHT+2)*(MAPWIDTH+2));
+
+				int tmpElimTotal = 0, cellElimInBlock = 0;
+				for (int ny = 1; ny <= MAPHEIGHT; ++ny) {
+					int fullFlag = 1, emptyFlag = 1, cellNumInBlock = 0;
+
+					for (int nx = 1; nx <= MAPWIDTH; ++nx) {
+						if (tmpGridInfo[ny][nx] == 0) fullFlag = 0;
+						else emptyFlag = 0;
+						if (tmpGridInfo[ny][nx] == 2) cellNumInBlock++;
+					}
+
+					if (fullFlag) {
+						tmpElimTotal++;
+						cellElimInBlock += cellNumInBlock;
+						for (int nx = 1; nx <= MAPWIDTH; ++nx) tmpGridInfo[ny][nx] = 0;
+					} else if (emptyFlag) {
+						break;
+					} else {
+						if (tmpElimTotal) {
+							for (int nx = 1; nx <= MAPWIDTH; ++nx) {
+								tmpGridInfo[ny-tmpElimTotal][nx] = tmpGridInfo[ny][nx];
+								tmpGridInfo[ny][nx] = 0;
+							}
+						}
+					}
 				}
-				
+
+				// Search next block
+				int minCount = 99999, maxCount = 0, sumDelta = 0;
+				for (int i = 0; i < 7; ++i) {
+					minCount = min(minCount, typeCountForColor[currBotColor][i]);
+					maxCount = max(maxCount, typeCountForColor[currBotColor][i]);
+				}
+
+				for (int i = 0; i < 7; ++i) {
+					sumDelta += minCount+2 - typeCountForColor[currBotColor][i];
+				}
+
+				double sumExpectation = 0.0;
+				for (int i = 0; i < 7; ++i) {
+					if (typeCountForColor[currBotColor][i] < minCount+2) {
+						Tetris nextBlock(i, currBotColor);
+						
+						double maxScore = -1000000000.0;
+						for (int nx = 1; nx <= MAPWIDTH; ++nx) {
+							for (int ny = 1; ny <= MAPHEIGHT; ++ny) {
+								for (int no = 0; no < 4; ++no) {
+									if (!nextBlock.set(nx, ny, no).isValid()) continue;
+									if (!Util::checkDirectDropTo(currBotColor, nextBlock.blockType, nx, ny, no)) continue;
+									if (!nextBlock.place()) continue;
+
+									nextBlock.extractFeature(tmpGridInfo, tmpElimTotal);
+									double values[6] = {
+										(double)nextBlock.landingHeight,
+										(double)nextBlock.rowsEliminated,
+										(double)nextBlock.rowTransitions,
+										(double)nextBlock.colTransitions,
+										(double)nextBlock.holes,
+										(double)nextBlock.wellSum
+									};
+									maxScore = max(maxScore, Pierre::calcEval(values));
+									nextBlock.remove();
+								}
+							}
+						}
+
+						double expect = maxScore * (minCount+2 - typeCountForColor[currBotColor][i]) / ((double) sumDelta);
+						sumExpectation += expect;
+					}
+				}
+
+				if (sumExpectation > maxPoints) {
+					maxPoints = sumExpectation;
+					finalX = x;
+					finalY = y;
+					finalO = o;
+				}
+
 				block.remove();
+
 			}
 		}
 	}
@@ -650,25 +717,30 @@ determined:
 	// 再看看给对方什么好
  
 	int maxCount = 0, minCount = 9999999;
+	int choice[7], available = 0;
 	for (int i = 0; i < 7; i++)
 	{
 		if (typeCountForColor[enemyColor][i] > maxCount)
 			maxCount = typeCountForColor[enemyColor][i];
 		if (typeCountForColor[enemyColor][i] < minCount)
 			minCount = typeCountForColor[enemyColor][i];
+		choice[i] = i;
 	}
 	if (maxCount - minCount == 2)
 	{
 		// 危险，找一个不是最大的块给对方吧
-		for (blockForEnemy = 0; blockForEnemy < 7; blockForEnemy++)
-			if (typeCountForColor[enemyColor][blockForEnemy] != maxCount)
-				break;
+		for (blockForEnemy = 0; blockForEnemy < 7; blockForEnemy++) {
+			if (typeCountForColor[enemyColor][blockForEnemy] != maxCount) {
+				choice[available++] = blockForEnemy;
+			}
+		}
+	} else {
+		available = 7;
 	}
-	else
-	{
-		blockForEnemy = rand() % 7;
-	}
- 
+
+	std::srand(std::time(0));
+	blockForEnemy = choice[rand() % available];
+
 	// 决策结束，输出结果（你只需修改以上部分）
  
 	cout << blockForEnemy << " " << finalX << " " << finalY << " " << finalO;
